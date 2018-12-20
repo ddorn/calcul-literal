@@ -39,6 +39,11 @@ bool isAlpha(string s);
 Token popToken(string& s);
 Tokens tokenize(string s);
 int getPrecedence(string s);
+Tree buildTree(Tokens);
+StringList toPoland(Tokens);
+Tokens insideParens(Tokens&);
+void extend(StringList&, StringList&);
+Token pop_front(Tokens&);
 
 
 class Node
@@ -50,12 +55,16 @@ class Node
 
 		Node (Token tok) : value(tok.token) {};
 		Node (Token tok, Tree& t_left, Tree& t_right) : value(tok.token), left(move(t_left)), right(move(t_right)) {};
+
+		bool isLeaf() {return left.get() == nullptr && right.get() == nullptr; }
+
 		virtual ~Node ();
 };
 
 
 int main() {
 	string math("-ln(10 + 7) * 1  +2*3 - (-5-6)");
+	/* math = "5*1^0+2*3^4 - 5"; */
 	cout << math << endl;
 
 	Tokens t = tokenize(math);
@@ -63,6 +72,20 @@ int main() {
 	for (auto tok : t) {
 		cout << tok.token << " prec: " << tok.precedence << " const: " << tok.constant << endl;
 	}
+
+	StringList polo;
+	try {
+		polo = toPoland(t);
+
+	} catch(Error e) {
+		cout << e.msg << endl;
+		return -1;
+	}
+
+	for (auto e : polo) {
+		cout << e << " ";
+	}
+	cout << endl;
 
 	return 0;
 }
@@ -150,4 +173,70 @@ int getPrecedence(string operatr) {
 	}
 
 	throw Error{"operator " + operatr + "not supported"};
+}
+
+StringList toPoland(Tokens tokList) {
+	StringList result;
+	Tokens operatorHeap;
+
+	while (not tokList.empty()) {
+		Token tok = pop_front(tokList);
+		if (tok.constant) {
+			result.push_back(tok.token);
+		} else if (tok.precedence == 0) {
+			// parentheses
+			Tokens inner = insideParens(tokList);
+			inner.pop_back();  // Remove the last parenthesis
+			StringList innerResult = toPoland(inner);
+			extend(result, innerResult);
+			if (tok.token == "(") {
+				// ignore, we don't put it in the poloand notation
+			} else {
+				// The function name without the closing (
+				result.push_back(tok.token.substr(0, tok.token.size() - 1));
+			}
+		} else {
+			while (not operatorHeap.empty() && tok.precedence >= operatorHeap.back().precedence) {
+				result.push_back(operatorHeap.back().token);
+				operatorHeap.pop_back();
+			}
+			operatorHeap.push_back(tok);
+		}
+	}
+	while (not operatorHeap.empty()) {
+		result.push_back(operatorHeap.back().token);
+		operatorHeap.pop_back();
+	}
+	return result;
+}
+
+Tokens insideParens(Tokens& tokList) {
+	Tokens result;
+
+	int depth(1);
+	while (depth != 0 && !tokList.empty()) {
+		if (tokList[0].token == ")") {
+			--depth;
+		} else if (tokList[0].token.back() == '(') {
+			++depth;
+		}
+		result.push_back(tokList[0]);
+		tokList.erase(tokList.begin());
+	}
+
+	if (tokList.empty() && depth != 0) {
+		 throw Error{"Missing closing parenthesis"};
+	}
+
+	return result;
+}
+void extend(StringList& l1, StringList& l2) {
+	for (auto s : l2) {
+		l1.push_back(s);
+	}
+}
+Token pop_front(Tokens& l) {
+	Token t = l[0];
+	l.erase(l.begin());
+	return t;
 }
