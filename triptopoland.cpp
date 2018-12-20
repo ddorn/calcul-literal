@@ -1,18 +1,57 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <memory>
 
 using namespace std;
 
 constexpr char MINUS_SIGN = '_';  // True minus sign, for unary minus
+constexpr int CONSTANT_PRECEDENCE = 31415;
 
-using Tokens = vector<string>;
+const vector<vector<string>> PRECEDENCE = {
+	{"(", ")"},  // functions need also to be hardocded at 0
+	{"^"},
+	{"*", "/"},
+	{string(1, MINUS_SIGN)},
+	{"+", "-"}
+};
+
+
+class Node;
+
+struct Token {
+	string token;
+	int precedence;
+	bool constant = false;
+};
+
+struct Error {
+	string msg;
+};
+
+using StringList = vector<string>;
+using Tokens = vector<Token>;
+using Tree = unique_ptr<Node>;
 
 void removeSpace(string& s);
 void fixUnaryMinus(string& s);
 bool isAlpha(string s);
+Token popToken(string& s);
 Tokens tokenize(string s);
-string popToken(string& s);
+int getPrecedence(string s);
+
+
+class Node
+{
+	public:
+		string value;
+		Tree left;
+		Tree right;
+
+		Node (Token tok) : value(tok.token) {};
+		Node (Token tok, Tree& t_left, Tree& t_right) : value(tok.token), left(move(t_left)), right(move(t_right)) {};
+		virtual ~Node ();
+};
 
 
 int main() {
@@ -22,7 +61,7 @@ int main() {
 	Tokens t = tokenize(math);
 
 	for (auto tok : t) {
-		cout << tok << endl;
+		cout << tok.token << " prec: " << tok.precedence << " const: " << tok.constant << endl;
 	}
 
 	return 0;
@@ -47,29 +86,35 @@ void fixUnaryMinus(string& s) {
 	}
 }
 
-string popToken(string& s) {
+Token popToken(string& s) {
 	// The purpose of this function is to group together tokens that ar more than one char long, like integers or functions names
-	string token(1, s[0]);
+	Token token;
+	token.token = string(1, s[0]);
 
-	// if it is a function
 	auto firstParenthesis = s.find('(');
-	if (firstParenthesis != 0 && firstParenthesis != string::npos) {
-		if (isAlpha(s.substr(0, firstParenthesis))) {
-			token = s.substr(0, firstParenthesis + 1);
-		}
-	}
 
-	// if it is anumber
+	// if it is a number
 	if (isdigit(s[0])) {
-		token = "";
+		token.token = "";
+		token.precedence = CONSTANT_PRECEDENCE;
+		token.constant = true;
+
 		int pos(0);
 		while (isdigit(s[pos])) {
-			token += s[pos];
+			token.token += s[pos];
 			++pos;
 		}
+	} else if (firstParenthesis != 0
+			&& firstParenthesis != string::npos
+			&& isAlpha(s.substr(0, firstParenthesis))) {
+		// if it is a function
+		token.token = s.substr(0, firstParenthesis + 1);
+		token.precedence = 0;
+	} else {
+		token.precedence = getPrecedence(token.token);
 	}
 
-	s.erase(0, token.size());
+	s.erase(0, token.token.size());
 	return token;
 }
 
@@ -91,4 +136,18 @@ bool isAlpha(string s) {
 		if (not isalpha(c)) return false;
 	}
 	return true;
+}
+
+int getPrecedence(string operatr) {
+	int prec(0);
+	for (auto precList : PRECEDENCE) {
+		for (auto op : precList) {
+			if (operatr == op) {
+				return prec;
+			}
+		}
+		++prec;
+	}
+
+	throw Error{"operator " + operatr + "not supported"};
 }
