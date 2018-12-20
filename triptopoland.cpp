@@ -41,6 +41,8 @@ void extend(StringList&, StringList&);
 int main() {
 	string math("-ln(10 + 7) * 1  +2*3 - (-5-6)");
 	/* math = "5*1^0+2*3^4 - 5"; */
+	cout << "enter some math:";
+	getline(cin, math);
 	cout << math << endl;
 
 	StringList t = tokenize(math);
@@ -179,7 +181,10 @@ StringList toPoland(StringList tokList) {
 	}
 
 	// Move every operator left to the result
-	extend(result, operatorHeap);
+	while (not operatorHeap.empty()) {
+		result.push_back(operatorHeap.back());
+		operatorHeap.pop_back();
+	}
 
 	return result;
 }
