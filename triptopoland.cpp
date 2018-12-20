@@ -17,69 +17,40 @@ const vector<vector<string>> PRECEDENCE = {
 };
 
 
-class Node;
-
-struct Token {
-	string token;
-	int precedence;
-	bool constant = false;
-};
-
 struct Error {
 	string msg;
 };
 
 using StringList = vector<string>;
-using Tokens = vector<Token>;
-using Tree = unique_ptr<Node>;
 
+int getPrecedence(string s);
+string popstring(string& s);
+StringList tokenize(string s);
+StringList toPoland(StringList);
+StringList insideParens(StringList&);
+
+// useful utilities
+bool isOperator(string);
+// utilities
 void removeSpace(string& s);
 void fixUnaryMinus(string& s);
 bool isAlpha(string s);
-Token popToken(string& s);
-Tokens tokenize(string s);
-int getPrecedence(string s);
-Tree buildTree(Tokens);
-StringList toPoland(Tokens);
-Tokens insideParens(Tokens&);
+string pop_front(StringList&);
 void extend(StringList&, StringList&);
-Token pop_front(Tokens&);
-
-
-class Node
-{
-	public:
-		string value;
-		Tree left;
-		Tree right;
-
-		Node (Token tok) : value(tok.token) {};
-		Node (Token tok, Tree& t_left, Tree& t_right) : value(tok.token), left(move(t_left)), right(move(t_right)) {};
-
-		bool isLeaf() {return left.get() == nullptr && right.get() == nullptr; }
-
-		virtual ~Node ();
-};
-
 
 int main() {
 	string math("-ln(10 + 7) * 1  +2*3 - (-5-6)");
 	/* math = "5*1^0+2*3^4 - 5"; */
 	cout << math << endl;
 
-	Tokens t = tokenize(math);
-
-	for (auto tok : t) {
-		cout << tok.token << " prec: " << tok.precedence << " const: " << tok.constant << endl;
-	}
-
+	StringList t = tokenize(math);
 	StringList polo;
+
 	try {
 		polo = toPoland(t);
-
 	} catch(Error e) {
 		cout << e.msg << endl;
-		return -1;
+		return 1;
 	}
 
 	for (auto e : polo) {
@@ -109,46 +80,41 @@ void fixUnaryMinus(string& s) {
 	}
 }
 
-Token popToken(string& s) {
+string popstring(string& s) {
 	// The purpose of this function is to group together tokens that ar more than one char long, like integers or functions names
-	Token token;
-	token.token = string(1, s[0]);
+	string token = string(1, s[0]);
 
 	auto firstParenthesis = s.find('(');
 
 	// if it is a number
 	if (isdigit(s[0])) {
-		token.token = "";
-		token.precedence = CONSTANT_PRECEDENCE;
-		token.constant = true;
+		token = "";
 
 		int pos(0);
 		while (isdigit(s[pos])) {
-			token.token += s[pos];
+			token += s[pos];
 			++pos;
 		}
 	} else if (firstParenthesis != 0
 			&& firstParenthesis != string::npos
 			&& isAlpha(s.substr(0, firstParenthesis))) {
 		// if it is a function
-		token.token = s.substr(0, firstParenthesis + 1);
-		token.precedence = 0;
+		token = s.substr(0, firstParenthesis + 1);
 	} else {
-		token.precedence = getPrecedence(token.token);
 	}
 
-	s.erase(0, token.token.size());
+	s.erase(0, token.size());
 	return token;
 }
 
-Tokens tokenize(string s) {
-	Tokens tokens;
+StringList tokenize(string s) {
+	StringList tokens;
 
 	removeSpace(s);
 	fixUnaryMinus(s);
 
 	while (not s.empty()) {
-		tokens.push_back(popToken(s));
+		tokens.push_back(popstring(s));
 	}
 
 	return tokens;
@@ -161,63 +127,74 @@ bool isAlpha(string s) {
 	return true;
 }
 
-int getPrecedence(string operatr) {
-	int prec(0);
+int getPrecedence(string token) {
+	int prec(CONSTANT_PRECEDENCE);
+
+	if (token.back() == '(') {
+		return 0;
+	}
 	for (auto precList : PRECEDENCE) {
 		for (auto op : precList) {
-			if (operatr == op) {
+			if (token == op) {
 				return prec;
 			}
 		}
 		++prec;
 	}
 
-	throw Error{"operator " + operatr + "not supported"};
+	return prec;
 }
 
-StringList toPoland(Tokens tokList) {
+StringList toPoland(StringList tokList) {
 	StringList result;
-	Tokens operatorHeap;
+	StringList operatorHeap;
+
 
 	while (not tokList.empty()) {
-		Token tok = pop_front(tokList);
-		if (tok.constant) {
-			result.push_back(tok.token);
-		} else if (tok.precedence == 0) {
+		string tok = pop_front(tokList);
+		int precedence = getPrecedence(tok);
+
+		if (precedence == 0) {
 			// parentheses
-			Tokens inner = insideParens(tokList);
+			// The idea is to first totally process what' s inside the parens and just then put the operator.
+			StringList inner = insideParens(tokList);
 			inner.pop_back();  // Remove the last parenthesis
 			StringList innerResult = toPoland(inner);
 			extend(result, innerResult);
-			if (tok.token == "(") {
+			if (tok == "(") {
 				// ignore, we don't put it in the poloand notation
 			} else {
 				// The function name without the closing (
-				result.push_back(tok.token.substr(0, tok.token.size() - 1));
+				result.push_back(tok.substr(0, tok.size() - 1));
 			}
-		} else {
-			while (not operatorHeap.empty() && tok.precedence >= operatorHeap.back().precedence) {
-				result.push_back(operatorHeap.back().token);
+		} else if (isOperator(tok)) {
+			while (not operatorHeap.empty() && precedence >= getPrecedence(operatorHeap.back())) {
+				result.push_back(operatorHeap.back());
 				operatorHeap.pop_back();
 			}
 			operatorHeap.push_back(tok);
+		} else {  // it is a constant / symbol
+			result.push_back(tok);
 		}
 	}
-	while (not operatorHeap.empty()) {
-		result.push_back(operatorHeap.back().token);
-		operatorHeap.pop_back();
-	}
+
+	// Move every operator left to the result
+	extend(result, operatorHeap);
+
 	return result;
 }
 
-Tokens insideParens(Tokens& tokList) {
-	Tokens result;
+StringList insideParens(StringList& tokList) {
+	// This is supposed to be called with a token list starting just after a parenthesis
+	// And returns all the token that are enclose in this pair of ().
+
+	StringList result;
 
 	int depth(1);
 	while (depth != 0 && !tokList.empty()) {
-		if (tokList[0].token == ")") {
+		if (tokList[0] == ")") {
 			--depth;
-		} else if (tokList[0].token.back() == '(') {
+		} else if (tokList[0].back() == '(') {
 			++depth;
 		}
 		result.push_back(tokList[0]);
@@ -225,7 +202,7 @@ Tokens insideParens(Tokens& tokList) {
 	}
 
 	if (tokList.empty() && depth != 0) {
-		 throw Error{"Missing closing parenthesis"};
+		throw Error{"Missing closing parenthesis"};
 	}
 
 	return result;
@@ -235,8 +212,17 @@ void extend(StringList& l1, StringList& l2) {
 		l1.push_back(s);
 	}
 }
-Token pop_front(Tokens& l) {
-	Token t = l[0];
+string pop_front(StringList& l) {
+	string t = l[0];
 	l.erase(l.begin());
 	return t;
+}
+
+bool isOperator(string token) {
+	for (auto l : PRECEDENCE) {
+		for (auto op : l) {
+			if (op == token) return true;
+		}
+	}
+	return false;
 }
